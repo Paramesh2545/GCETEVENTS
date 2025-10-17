@@ -67,19 +67,47 @@ const EventRegistrationModal: React.FC<EventRegistrationModalProps> = ({
         setIsLoading(false); // Stop loading spinner since modal is open
         return; // Do not proceed further
       } 
+      
       // For free events, create registration immediately
-      const registrationId = await eventRegistrationService.registerForEvent(
-        event.id,
-        user,
-        {
-          name: event.name || event.title || 'Untitled Event',
-          date: event.date || 'TBD',
-          location: event.location || 'TBD',
-          registrationFee: event.registrationFee,
-          organizerClubId: event.organizerClubId
-        },
-        additionalInfo.trim() || undefined
-      );
+      let registrationId: string;
+      
+      if (user.isGuest) {
+        // Guest registration
+        registrationId = await eventRegistrationService.registerGuestForEvent(
+          event.id,
+          event.organizerClubId,
+          {
+            name: user.name,
+            email: user.email || '',
+            phone: user.mobile || '',
+            college: user.collegeName || 'GCET',
+            year: user.year || '1',
+            department: user.branch || 'CSE'
+          },
+          {
+            name: event.name || event.title || 'Untitled Event',
+            date: event.date || 'TBD',
+            location: event.location || 'TBD',
+            registrationFee: event.registrationFee
+          },
+          additionalInfo.trim() || undefined
+        );
+      } else {
+        // Regular user registration
+        registrationId = await eventRegistrationService.registerForEvent(
+          event.id,
+          user,
+          {
+            name: event.name || event.title || 'Untitled Event',
+            date: event.date || 'TBD',
+            location: event.location || 'TBD',
+            registrationFee: event.registrationFee,
+            organizerClubId: event.organizerClubId
+          },
+          additionalInfo.trim() || undefined
+        );
+      }
+      
       setIsRegistered(true);
       onRegistrationSuccess(registrationId);
       await checkRegistrationStatus();

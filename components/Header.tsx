@@ -119,7 +119,7 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout, applications, notificat
                             </div>
                         )}
                     </div>
-                    <NavLink to="/clubs" onClick={closeAllMenus}>Clubs</NavLink>
+                    {!user?.isGuest && <NavLink to="/clubs" onClick={closeAllMenus}>Clubs</NavLink>}
                     <NavLink to="/news" onClick={closeAllMenus}>News</NavLink>
                     <NavLink to="/opportunities" onClick={closeAllMenus}>Opportunities</NavLink>
                 </nav>
@@ -207,7 +207,7 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout, applications, notificat
             <MobileNavLink to="/" onClick={closeAllMenus}>Home</MobileNavLink>
             <MobileNavLink to="/events" onClick={closeAllMenus}>All Events</MobileNavLink>
             <MobileNavLink to="/annual-events" onClick={closeAllMenus}>Annual Events</MobileNavLink>
-            <MobileNavLink to="/clubs" onClick={closeAllMenus}>Clubs</MobileNavLink>
+            {!user?.isGuest && <MobileNavLink to="/clubs" onClick={closeAllMenus}>Clubs</MobileNavLink>}
             <MobileNavLink to="/news" onClick={closeAllMenus}>News</MobileNavLink>
             <MobileNavLink to="/opportunities" onClick={closeAllMenus}>Opportunities</MobileNavLink>
             {user && (

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import PasswordField from './PasswordField';
 import ForgotPasswordModal from './ForgotPasswordModal';
 import OTPVerificationModal from './OTPVerificationModal';
+import GuestLoginModal, { GuestUserData } from './GuestLoginModal';
 import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { auth } from '../firebaseConfig';
 import { userProfileService } from '../services/firebaseAuthService';
@@ -339,89 +340,30 @@ const SignUpForm: React.FC<SignUpFormProps> = ({ onSignUp, onCreateProfileForExi
     );
 };
 
-interface GuestFormProps {
-    onGuestLogin: (details: Omit<User, 'id' | 'role' | 'isGuest' | 'rollNumber' | 'managedClubIds'>) => void;
-    onBack: () => void;
-}
-
-const GuestForm: React.FC<GuestFormProps> = ({ onGuestLogin, onBack }) => {
-     const [formData, setFormData] = useState({
-        name: '',
-        email: '',
-        collegeName: '',
-        year: '1st Year',
-        mobile: ''
-    });
-
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
-    };
-    
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        onGuestLogin(formData);
-    }
-    return (
-       <div className="w-full max-w-md animate-flip-in">
-            <div className="text-center mb-8">
-                <h1 className="text-3xl font-extrabold text-white tracking-tighter">Continue as Guest</h1>
-                <p className="text-gray-400 mt-2">Your information will only be used for this session.</p>
-            </div>
-            <div className="bg-gray-900/30 backdrop-blur-sm border border-gray-800 rounded-xl shadow-2xl p-8">
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
-                        <label htmlFor="name" className="block text-sm font-medium text-gray-300">Full Name</label>
-                        <input type="text" name="name" id="name" value={formData.name} onChange={handleChange} required className="mt-1 block w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-md" />
-                    </div>
-                     <div>
-                        <label htmlFor="email" className="block text-sm font-medium text-gray-300">Email</label>
-                        <input type="email" name="email" id="email" value={formData.email} onChange={handleChange} required className="mt-1 block w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-md" />
-                    </div>
-                    <div>
-                        <label htmlFor="collegeName" className="block text-sm font-medium text-gray-300">College Name</label>
-                        <input type="text" name="collegeName" id="collegeName" value={formData.collegeName} onChange={handleChange} required className="mt-1 block w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-md" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label htmlFor="year" className="block text-sm font-medium text-gray-300">Year</label>
-                            <select name="year" id="year" value={formData.year} onChange={handleChange} className="mt-1 block w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-md">
-                                <option>1st Year</option>
-                                <option>2nd Year</option>
-                                <option>3rd Year</option>
-                                <option>4th Year</option>
-                                <option>Other</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label htmlFor="mobile" className="block text-sm font-medium text-gray-300">Mobile Number</label>
-                            <input type="tel" name="mobile" id="mobile" value={formData.mobile} onChange={handleChange} required className="mt-1 block w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-md" />
-                        </div>
-                    </div>
-                    <button type="submit" className="w-full flex justify-center py-3 px-4 bg-indigo-600 text-white font-bold rounded-md hover:bg-indigo-700">Proceed as Guest</button>
-                    <button type="button" onClick={onBack} className="w-full flex justify-center py-2 px-4 text-sm text-gray-400 hover:text-white">Back to Login</button>
-                </form>
-            </div>
-        </div>
-    );
-};
 
 interface LoginPageProps {
     onLogin: (email: string, password: string) => Promise<void>;
     onRegisterAndLogin: (details: Omit<User, 'id' | 'role' | 'isGuest' | 'managedClubIds'> & {password: string}) => Promise<void>;
     onCreateProfileForExistingUser: (details: Omit<User, 'id' | 'role' | 'isGuest' | 'managedClubIds'>) => Promise<void>;
     onUserRegistered: (user: User) => void;
-    onGuestLogin: (details: Omit<User, 'id' | 'role' | 'isGuest' | 'rollNumber' | 'managedClubIds'>) => void;
+    onGuestLogin: (guestData: GuestUserData) => void;
 }
 
 const LoginPage: React.FC<LoginPageProps> = ({ onLogin, onRegisterAndLogin, onCreateProfileForExistingUser, onUserRegistered, onGuestLogin }) => {
     const [view, setView] = useState<View>('login');
+    const [showGuestModal, setShowGuestModal] = useState(false);
+
+    const handleGuestLogin = (guestData: GuestUserData) => {
+        onGuestLogin(guestData);
+        setShowGuestModal(false);
+    };
 
     const renderContent = () => {
         switch (view) {
             case 'login':
                 return <LoginForm 
                             onLogin={onLogin} 
-                            onGuestClick={() => setView('guest')} 
+                            onGuestClick={() => setShowGuestModal(true)} 
                             onSignUpClick={() => setView('signup')}
                         />
             case 'signup':
@@ -431,11 +373,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, onRegisterAndLogin, onCr
                             onUserRegistered={onUserRegistered}
                             onBack={() => setView('login')}
                        />
-            case 'guest':
-                return <GuestForm 
-                        onGuestLogin={onGuestLogin}
-                        onBack={() => setView('login')}
-                    />
             default:
                 return null;
         }
@@ -451,6 +388,13 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, onRegisterAndLogin, onCr
             <div className="relative z-10 w-full max-w-md">
                  {renderContent()}
             </div>
+
+            {/* Guest Login Modal */}
+            <GuestLoginModal
+                isOpen={showGuestModal}
+                onClose={() => setShowGuestModal(false)}
+                onGuestLogin={handleGuestLogin}
+            />
         </div>
     );
 };

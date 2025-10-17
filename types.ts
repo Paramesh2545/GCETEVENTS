@@ -223,6 +223,11 @@ export interface EventRegistration {
   paymentStatus?: PaymentStatus;
   additionalInfo?: { [key: string]: string };
   notes?: string; // For organizers to add notes
+  
+  // Guest-specific fields
+  isGuest?: boolean;
+  guestCollege?: string;
+  expiresAt?: Date; // Expiration date for guest data (3 months)
 }
 
 export interface EventRegistrationStats {

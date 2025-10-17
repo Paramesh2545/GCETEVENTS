@@ -271,8 +271,18 @@ const App: React.FC = () => {
     }
   };
 
-  const handleGuestLogin = (details: Omit<User, 'id' | 'role' | 'isGuest' | 'rollNumber' | 'managedClubIds'>) => {
-    const guestUser: User = { ...details, id: `guest_${Date.now()}`, role: 'guest', isGuest: true };
+  const handleGuestLogin = (guestData: { name: string; email: string; phone: string; college: string; year: string; department: string }) => {
+    const guestUser: User = { 
+      id: `guest_${Date.now()}`, 
+      name: guestData.name,
+      email: guestData.email,
+      mobile: guestData.phone,
+      year: guestData.year,
+      branch: guestData.department,
+      collegeName: guestData.college,
+      role: 'guest', 
+      isGuest: true 
+    };
     setUser(guestUser);
     navigate('/');
   };

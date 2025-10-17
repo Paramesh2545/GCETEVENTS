@@ -168,16 +168,33 @@ export const eventRegistrationService = {
   isUserRegistered: async (eventId: string, userId: string, clubId?: string): Promise<boolean> => {
     if (!clubId || !eventId || !userId) return false;
     try {
-      // Use a query to only fetch registrations for this user (matches security rules)
-      const registrationsRef = query(
-        collection(db, 'events', clubId, 'clubEvents', eventId, 'registrations'),
-        where('userId', '==', userId)
-      );
-      const querySnapshot = await getDocs(registrationsRef);
-      const activeRegistrations = querySnapshot.docs.filter(doc => {
-        const data = doc.data();
-        return data.status !== 'cancelled';
-      });
+      const isGuest = userId.startsWith('guest_');
+      let activeRegistrations: any[] = [];
+      
+      if (isGuest) {
+        // Check guest registrations collection
+        const guestRegistrationsRef = query(
+          collection(db, 'events', clubId, 'clubEvents', eventId, 'guestRegistrations'),
+          where('userId', '==', userId)
+        );
+        const guestQuerySnapshot = await getDocs(guestRegistrationsRef);
+        activeRegistrations = guestQuerySnapshot.docs.filter(doc => {
+          const data = doc.data();
+          return data.status !== 'cancelled';
+        });
+      } else {
+        // Check regular registrations collection
+        const registrationsRef = query(
+          collection(db, 'events', clubId, 'clubEvents', eventId, 'registrations'),
+          where('userId', '==', userId)
+        );
+        const querySnapshot = await getDocs(registrationsRef);
+        activeRegistrations = querySnapshot.docs.filter(doc => {
+          const data = doc.data();
+          return data.status !== 'cancelled';
+        });
+      }
+      
       return activeRegistrations.length > 0;
     } catch (error) {
       console.error('Error checking user registration:', error, { eventId, userId, clubId });
@@ -203,17 +220,35 @@ export const eventRegistrationService = {
     }
     const registrations: EventRegistration[] = [];
     try {
-      // Add a query to only fetch registrations for this user (security rules will allow only their own docs)
-      const regsSnap = await getDocs(
-        query(
-          collection(db, 'events', clubId, 'clubEvents', eventId, 'registrations'),
-          where('userId', '==', userId)
-        )
-      );
-      for (const regDoc of regsSnap.docs) {
-        const regData = regDoc.data() as EventRegistration;
-        registrations.push({ id: regDoc.id, ...regData });
+      // Check if this is a guest user
+      const isGuest = userId.startsWith('guest_');
+      
+      if (isGuest) {
+        // For guest users, check guestRegistrations collection
+        const guestRegsSnap = await getDocs(
+          query(
+            collection(db, 'events', clubId, 'clubEvents', eventId, 'guestRegistrations'),
+            where('userId', '==', userId)
+          )
+        );
+        for (const regDoc of guestRegsSnap.docs) {
+          const regData = regDoc.data() as EventRegistration;
+          registrations.push({ id: regDoc.id, ...regData });
+        }
+      } else {
+        // For regular users, check regular registrations collection
+        const regsSnap = await getDocs(
+          query(
+            collection(db, 'events', clubId, 'clubEvents', eventId, 'registrations'),
+            where('userId', '==', userId)
+          )
+        );
+        for (const regDoc of regsSnap.docs) {
+          const regData = regDoc.data() as EventRegistration;
+          registrations.push({ id: regDoc.id, ...regData });
+        }
       }
+      
       registrations.sort((a, b) => {
         if (a.registrationDate && b.registrationDate) {
           return (b.registrationDate.seconds || 0) - (a.registrationDate.seconds || 0);
@@ -227,11 +262,30 @@ export const eventRegistrationService = {
     }
   },
 
-  // Get registrations for a specific event
+  // Get registrations for a specific event (both regular and guest registrations)
   getEventRegistrations: async (eventId: string, clubId: string): Promise<EventRegistration[]> => {
-    const registrationsRef = collection(db, 'events', clubId, 'clubEvents', eventId, 'registrations');
-    const snapshot = await getDocs(registrationsRef);
-    return snapshot.docs.map(doc => doc.data() as EventRegistration);
+    const allRegistrations: EventRegistration[] = [];
+    
+    try {
+      // Get regular registrations
+      const registrationsRef = collection(db, 'events', clubId, 'clubEvents', eventId, 'registrations');
+      const regularSnapshot = await getDocs(registrationsRef);
+      regularSnapshot.docs.forEach(doc => {
+        allRegistrations.push({ id: doc.id, ...doc.data() } as EventRegistration);
+      });
+      
+      // Get guest registrations
+      const guestRegistrationsRef = collection(db, 'events', clubId, 'clubEvents', eventId, 'guestRegistrations');
+      const guestSnapshot = await getDocs(guestRegistrationsRef);
+      guestSnapshot.docs.forEach(doc => {
+        allRegistrations.push({ id: doc.id, ...doc.data() } as EventRegistration);
+      });
+      
+      return allRegistrations;
+    } catch (error) {
+      console.error('Error getting event registrations:', error);
+      return [];
+    }
   },
 
   // Get registration statistics for an event
@@ -441,6 +495,53 @@ export const eventRegistrationService = {
 
     const registrationsRef = collection(db, 'events', clubId, 'clubEvents', eventId, 'registrations');
     const docRef = await addDoc(registrationsRef, registrationData);
+    return docRef.id;
+  },
+
+  // Register guest user for an event (no authentication required)
+  registerGuestForEvent: async (
+    eventId: string,
+    clubId: string,
+    guestData: {
+      name: string;
+      email: string;
+      phone: string;
+      college: string;
+      year: string;
+      department: string;
+    },
+    eventInfo: { name: string; date: string; location: string; registrationFee?: number },
+    additionalInfo?: string
+  ): Promise<string> => {
+    const now = new Date();
+    const expirationDate = new Date(now.getTime() + (3 * 30 * 24 * 60 * 60 * 1000)); // 3 months from now
+    
+    const registrationData = {
+      eventId,
+      clubId,
+      userId: `guest_${Date.now()}`,
+      userName: guestData.name,
+      userEmail: guestData.email,
+      userPhone: guestData.phone,
+      userYear: guestData.year,
+      userBranch: guestData.department,
+      status: 'confirmed',
+      additionalInfo: additionalInfo || '',
+      registrationDate: serverTimestamp(),
+      eventName: eventInfo.name,
+      eventDate: eventInfo.date,
+      eventLocation: eventInfo.location,
+      registrationFee: eventInfo.registrationFee || 0,
+      checkInStatus: 'not_checked_in',
+      // Guest-specific fields
+      isGuest: true,
+      guestCollege: guestData.college,
+      // Expiration timestamp (3 months from creation)
+      expiresAt: expirationDate,
+    };
+
+    const guestRegistrationsRef = collection(db, 'events', clubId, 'clubEvents', eventId, 'guestRegistrations');
+    const docRef = await addDoc(guestRegistrationsRef, registrationData);
     return docRef.id;
   },
 };
