@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { User, Event, Club, Application, EventStatus } from '../types';
 import ChangePasswordModal from './ChangePasswordModal';
 import { firestoreDataService } from '../services/firestoreDataService';
+import { useProfileData } from '../hooks/useProfileData';
 
 interface ProfilePageProps {
   user: User;
@@ -10,7 +11,6 @@ interface ProfilePageProps {
   events: Event[];
   clubs: Club[];
   applications: Application[];
-  registeredEventIds: string[];
 }
 
 type ProfileTab = 'events' | 'clubs' | 'applications';
@@ -115,18 +115,24 @@ const ProfileCard: React.FC<ProfileCardProps> = ({ user, onLogout, onOpenChangeP
     );
 };
 
-const ProfilePage: React.FC<ProfilePageProps> = ({ user, onLogout, events, clubs, applications, registeredEventIds }) => {
+const ProfilePage: React.FC<ProfilePageProps> = ({ user, onLogout, events, clubs, applications }) => {
   const [activeTab, setActiveTab] = useState<ProfileTab>('events');
   const [isChangePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
   const navigate = useNavigate();
 
+  // Use optimized profile data hook
+  const { registeredEvents, isLoadingRegistrations, refreshRegistrations } = useProfileData({
+    user,
+    events,
+    activeTab
+  });
+
   const { upcomingEvents, pastEvents } = useMemo(() => {
-    const userEvents = events.filter(e => registeredEventIds.includes(e.id));
     return {
-      upcomingEvents: userEvents.filter(e => e.status === EventStatus.Upcoming || e.status === EventStatus.Ongoing),
-      pastEvents: userEvents.filter(e => e.status === EventStatus.Past),
+      upcomingEvents: registeredEvents.filter(e => e.status === EventStatus.Upcoming || e.status === EventStatus.Ongoing),
+      pastEvents: registeredEvents.filter(e => e.status === EventStatus.Past),
     };
-  }, [events, registeredEventIds]);
+  }, [registeredEvents]);
 
 //   const { managedClubs, memberClubs } = useMemo(() => {
 //     const managed = clubs.filter(c => user.managedClubIds?.includes(c.id));
@@ -215,7 +221,12 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onLogout, events, clubs
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-4">
                             <h4 className="font-semibold text-gray-300 text-lg px-2">Upcoming & Ongoing</h4>
-                            {upcomingEvents.length > 0 ? upcomingEvents.map((event, i) => (
+                            {isLoadingRegistrations ? (
+                                <div className="flex items-center justify-center py-8">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+                                    <span className="ml-2 text-gray-400">Loading your events...</span>
+                                </div>
+                            ) : upcomingEvents.length > 0 ? upcomingEvents.map((event, i) => (
                                 <button key={event.id} onClick={() => navigate(`/events/${event.id}`)} style={{animationDelay: `${i*100}ms`}} className="animate-staggered-fade-in w-full text-left p-4 rounded-lg bg-slate-900 hover:bg-slate-800 transition-colors border border-slate-800 hover:border-slate-700">
                                     <p className="font-semibold truncate text-white">{event.name}</p>
                                     <p className="text-xs text-gray-400">{event.date} at {event.time}</p>
@@ -224,7 +235,12 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ user, onLogout, events, clubs
                         </div>
                         <div className="space-y-4">
                              <h4 className="font-semibold text-gray-300 text-lg px-2">Past Events</h4>
-                             {pastEvents.length > 0 ? pastEvents.map((event, i) => (
+                             {isLoadingRegistrations ? (
+                                <div className="flex items-center justify-center py-8">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
+                                    <span className="ml-2 text-gray-400">Loading your events...</span>
+                                </div>
+                            ) : pastEvents.length > 0 ? pastEvents.map((event, i) => (
                                 <button key={event.id} onClick={() => navigate(`/events/${event.id}`)} style={{animationDelay: `${i*100}ms`}} className="animate-staggered-fade-in w-full text-left p-4 rounded-lg bg-slate-900 hover:bg-slate-800 transition-colors border border-slate-800 hover:border-slate-700">
                                     <p className="font-semibold truncate text-white">{event.name}</p>
                                     <p className="text-xs text-gray-400">{event.date}</p>

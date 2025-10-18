@@ -222,7 +222,6 @@ export const firestoreDataService = {
         } as Event;
       });
   
-      // console.log("🔥 Events fetched:", events);
       return events;
     } catch (error) {
       console.error("Error getting events:", error);
@@ -259,7 +258,12 @@ export const firestoreDataService = {
       const usersRef = collection(db, COLLECTIONS.USERS);
       const snapshot = await getDocs(usersRef);
       return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
-    } catch (error) {
+    } catch (error: any) {
+      // Handle permission errors gracefully
+      if (error.code === 'permission-denied' || error.message?.includes('permissions')) {
+        console.warn('Users require authentication - skipping for now');
+        return [];
+      }
       console.error('Error getting users:', error);
       return [];
     }
@@ -324,7 +328,12 @@ export const firestoreDataService = {
       const notificationsRef = collection(db, COLLECTIONS.NOTIFICATIONS);
       const snapshot = await getDocs(notificationsRef);
       return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Notification));
-    } catch (error) {
+    } catch (error: any) {
+      // Handle permission errors gracefully
+      if (error.code === 'permission-denied' || error.message?.includes('permissions')) {
+        console.warn('Notifications require authentication - skipping for now');
+        return [];
+      }
       console.error('Error getting notifications:', error);
       return [];
     }
@@ -336,7 +345,12 @@ export const firestoreDataService = {
       const applicationsRef = collection(db, COLLECTIONS.APPLICATIONS);
       const snapshot = await getDocs(applicationsRef);
       return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Application));
-    } catch (error) {
+    } catch (error: any) {
+      // Handle permission errors gracefully
+      if (error.code === 'permission-denied' || error.message?.includes('permissions')) {
+        console.warn('Applications require authentication - skipping for now');
+        return [];
+      }
       console.error('Error getting applications:', error);
       return [];
     }

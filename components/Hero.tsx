@@ -55,9 +55,9 @@
 
 
 
-
 import React from 'react';
 import { View } from '../types';
+import { Link } from 'react-router-dom';
 
 interface HeroProps {
   onNavigate: (view: View) => void;
@@ -93,48 +93,15 @@ const AbstractIllustration: React.FC = () => (
 );
 
 
-const Card: React.FC<{ icon: React.ReactNode; title: string; description: string, color: string }> = ({ icon, title, description, color }) => {
-    const getColorClasses = (color: string) => {
-        switch (color) {
-            case 'indigo':
-                return {
-                    border: 'hover:border-indigo-500/50',
-                    bg: 'bg-indigo-500/10',
-                    text: 'text-indigo-400'
-                };
-            case 'purple':
-                return {
-                    border: 'hover:border-purple-500/50',
-                    bg: 'bg-purple-500/10',
-                    text: 'text-purple-400'
-                };
-            case 'pink':
-                return {
-                    border: 'hover:border-pink-500/50',
-                    bg: 'bg-pink-500/10',
-                    text: 'text-pink-400'
-                };
-            default:
-                return {
-                    border: 'hover:border-indigo-500/50',
-                    bg: 'bg-indigo-500/10',
-                    text: 'text-indigo-400'
-                };
-        }
-    };
-
-    const colorClasses = getColorClasses(color);
-
-    return (
-        <div className={`bg-slate-900 p-6 rounded-2xl border border-slate-800 shadow-lg ${colorClasses.border} hover:-translate-y-1 transition-all duration-300`}>
-            <div className={`w-12 h-12 rounded-full ${colorClasses.bg} flex items-center justify-center mb-4`}>
-                <div className={colorClasses.text}>{icon}</div>
-            </div>
-            <h3 className="text-lg font-bold text-white">{title}</h3>
-            <p className="mt-1 text-sm text-gray-400">{description}</p>
+const Card: React.FC<{ icon: React.ReactNode; title: string; description: string, color: string, className?: string, style?: React.CSSProperties }> = ({ icon, title, description, color, className, style }) => (
+    <div className={`bg-slate-900 p-6 rounded-2xl border border-slate-800 shadow-lg hover:border-${color}-500/50 hover:-translate-y-1 transition-all duration-300 h-full ${className || ''}`} style={style}>
+        <div className={`w-12 h-12 rounded-full bg-${color}-500/10 flex items-center justify-center mb-4`}>
+            <div className={`text-${color}-400`}>{icon}</div>
         </div>
-    );
-};
+        <h3 className="text-lg font-bold text-white">{title}</h3>
+        <p className="mt-1 text-sm text-gray-400">{description}</p>
+    </div>
+);
 
 const Hero: React.FC<HeroProps> = ({ onNavigate }) => {
     return (
@@ -142,39 +109,58 @@ const Hero: React.FC<HeroProps> = ({ onNavigate }) => {
             <div className="container mx-auto px-6 py-20 min-h-[90vh]">
                 <div className="grid lg:grid-cols-2 gap-12 items-center">
                     {/* Left Column: Text Content & Cards */}
-                    <div className="relative z-10 text-center lg:text-left animate-fade-in-content">
+                    <div className="relative z-10 text-center lg:text-left">
                         <div className="absolute -top-1/4 -left-1/4 w-96 h-96 bg-indigo-600/10 rounded-full filter blur-3xl -z-10"></div>
-                        <h1 className="text-5xl lg:text-6xl font-extrabold text-white leading-tight tracking-tighter">
+                        <h1 
+                            className="text-5xl lg:text-6xl font-extrabold text-white leading-tight tracking-tighter animate-staggered-fade-in"
+                            style={{ animationDelay: '100ms' }}
+                        >
                             Innovate & Connect:
                             <br/>
                             <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">Your Campus Hub.</span>
                         </h1>
-                        <p className="mt-6 text-lg text-gray-400 max-w-lg mx-auto lg:mx-0">
+                        <p 
+                            className="mt-6 text-lg text-gray-400 max-w-lg mx-auto lg:mx-0 animate-staggered-fade-in"
+                            style={{ animationDelay: '200ms' }}
+                        >
                             Discover events, join clubs, and shape your college experience. All in one place.
                         </p>
-                        <div className="mt-8 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
-                            <button onClick={() => onNavigate({ type: 'all-events' })} className="w-full sm:w-auto px-8 py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-colors transform hover:scale-105 shadow-lg">
+                        <div 
+                            className="mt-8 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 animate-staggered-fade-in"
+                            style={{ animationDelay: '300ms' }}
+                        >
+                            <Link to="/events">
+                                <button className="w-full sm:w-auto px-8 py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-colors transform hover:scale-105 shadow-lg">
                                 Explore Events
                             </button>
-                            <button onClick={() => onNavigate({ type: 'all-clubs' })} className="w-full sm:w-auto px-8 py-3 bg-slate-800/80 backdrop-blur-sm border border-slate-700 text-white font-semibold rounded-xl hover:bg-slate-700 transition-colors">
-                                Find Clubs
-                            </button>
+                            </Link>
+                            <Link to="/clubs">
+                                <button className="w-full sm:w-auto px-8 py-3 bg-slate-800/80 backdrop-blur-sm border border-slate-700 text-white font-semibold rounded-xl hover:bg-slate-700 transition-colors">
+                                    Find Clubs
+                                </button>
+                            </Link>
                         </div>
                         {/* Cards Section */}
                         <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <Card 
+                                className="animate-staggered-fade-in"
+                                style={{ animationDelay: '400ms' }}
                                 title="Discover Events"
                                 description="Browse workshops, competitions, and fests."
                                 color="indigo"
                                 icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
                             />
                              <Card 
+                                className="animate-staggered-fade-in"
+                                style={{ animationDelay: '500ms' }}
                                 title="Join Clubs"
                                 description="Find your community and get involved on campus."
                                 color="purple"
                                 icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>}
                             />
                              <Card 
+                                className="animate-staggered-fade-in"
+                                style={{ animationDelay: '600ms' }}
                                 title="Stay Updated"
                                 description="Get the latest news on recruitments and results."
                                 color="pink"
@@ -184,7 +170,7 @@ const Hero: React.FC<HeroProps> = ({ onNavigate }) => {
                     </div>
 
                     {/* Right Column: Illustration */}
-                    <div className="relative h-[400px] lg:h-[500px] hidden md:block">
+                    <div className="relative h-[400px] lg:h-[500px] hidden md:block animate-staggered-fade-in" style={{ animationDelay: '200ms' }}>
                         <AbstractIllustration />
                     </div>
                 </div>

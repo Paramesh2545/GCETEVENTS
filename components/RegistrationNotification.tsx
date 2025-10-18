@@ -28,19 +28,13 @@ const RegistrationNotification: React.FC<RegistrationNotificationProps> = ({
   const checkRegistrationStatus = async () => {
     try {
       setIsLoading(true);
-      // FIX: Always pass clubId to isUserRegistered
-      const isRegistered = await eventRegistrationService.isUserRegistered(event.id, user!.id, event.organizerClubId);
+      // FIX: Always pass clubId to isUserRegisteredWithUser
+      const isRegistered = await eventRegistrationService.isUserRegisteredWithUser(event.id, user!, event.organizerClubId);
       
-      if (isRegistered) {
-        // FIX: Always pass clubId to getUserRegistrations
-        const registrations = await eventRegistrationService.getUserRegistrations(user!.id, event.organizerClubId, event.id);
-        const eventRegistration = registrations.find(r => r.eventId === event.id);
-        setRegistration(eventRegistration || null);
-        setShowNotification(true);
-      } else {
-        setRegistration(null);
-        setShowNotification(false);
-      }
+      // Don't fetch full registration details - just set the status
+      // This eliminates unnecessary guest registration queries
+      setRegistration(null);
+      setShowNotification(isRegistered);
     } catch (error) {
       console.error('Error checking registration status:', error);
     } finally {

@@ -7,7 +7,7 @@ import {
   onAuthStateChanged,
   User as FirebaseUser
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../frontend/firebaseConfig';
 import { User } from '../types';
 import { removeUndefinedValues } from '../utils/firestoreUtils';
@@ -197,9 +197,77 @@ export const getUserWithProfile = async (firebaseUser: FirebaseUser): Promise<Us
       });
     }
     
-    return userProfile;
+  return userProfile;
+} catch (error) {
+  console.error('Error getting user with profile:', error);
+  return null;
+}
+};
+
+// Create guest user profile in Firestore (no Firebase Auth required)
+export const createGuestUserProfile = async (guestData: {
+  name: string;
+  email: string;
+  phone: string;
+  college: string;
+  year: string;
+  department: string;
+}): Promise<User> => {
+  try {
+    // Create a consistent guest ID based on email to prevent duplicates
+    const guestId = `guest_${guestData.email.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    console.log('Creating guest user with ID:', guestId);
+    console.log('Email:', guestData.email);
+    console.log('Processed email:', guestData.email.replace(/[^a-zA-Z0-9]/g, '_'));
+    
+    // Check if guest user already exists
+    const existingGuestDoc = await getDoc(doc(db, 'users', guestId));
+    if (existingGuestDoc.exists()) {
+      console.log('Guest user already exists, returning existing profile:', guestId);
+      return existingGuestDoc.data() as User;
+    }
+    
+    const now = new Date();
+    const expirationDate = new Date(now.getTime() + (3 * 30 * 24 * 60 * 60 * 1000)); // 3 months from now
+    
+    const guestUserProfile: User = {
+      id: guestId,
+      name: guestData.name,
+      email: guestData.email,
+      mobile: guestData.phone,
+      year: guestData.year,
+      branch: guestData.department,
+      collegeName: guestData.college,
+      role: 'guest',
+      isGuest: true,
+      managedClubIds: [],
+      // Add expiration timestamp for cleanup
+      expiresAt: expirationDate
+    };
+
+    // Store guest user profile in Firestore
+    const userDataToStore = {
+      ...guestUserProfile,
+      createdAt: serverTimestamp(),
+      expiresAt: expirationDate
+    };
+    
+    console.log('Storing guest user data:', userDataToStore);
+    console.log('Document path: users/', guestId);
+    
+    await setDoc(doc(db, 'users', guestId), userDataToStore);
+    
+    console.log('Guest user profile created:', guestId);
+    return guestUserProfile;
   } catch (error) {
-    console.error('Error getting user with profile:', error);
-    return null;
+    console.error('Error creating guest user profile:', error);
+    console.error('Guest data:', guestData);
+    
+    // Provide more specific error information
+    if (error instanceof Error) {
+      throw new Error(`Failed to create guest user profile: ${error.message}`);
+    } else {
+      throw new Error(`Failed to create guest user profile: ${JSON.stringify(error)}`);
+    }
   }
 };

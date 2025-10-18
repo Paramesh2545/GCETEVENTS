@@ -10,7 +10,8 @@ import {
   serverTimestamp,
   orderBy,
   setDoc,
-  getDoc 
+  getDoc,
+  getCountFromServer
 } from 'firebase/firestore';
 import { auth } from '../../frontend/firebaseConfig';
 import { db } from '../../frontend/firebaseConfig';
@@ -39,6 +40,9 @@ export interface EventRegistration {
   qrCode?: string;
   checkInTime?: any; // Firestore timestamp
   checkInStatus?: 'not_checked_in' | 'checked_in';
+  isGuest?: boolean; // For guest registrations
+  guestCollege?: string; // For guest college information
+  expiresAt?: Date; // For guest registration cleanup
 }
 
 export interface RegistrationStats {
@@ -76,6 +80,12 @@ export interface EventTeam {
   createdAt: any; // Firestore timestamp
 }
 
+// Helper function to get the correct user ID for registration checking
+const getCorrectUserId = (user: User): string => {
+  // For guest users, use their ID directly; for authenticated users, use auth.currentUser.uid
+  return user.isGuest ? user.id : (auth.currentUser?.uid || user.id);
+};
+
 export const eventRegistrationService = {
   // Register for an event (only for free events, paid events handled after payment)
   registerForEvent: async (
@@ -93,10 +103,18 @@ export const eventRegistrationService = {
     }
 
     // For free events, create registration immediately
-    const registrationData: EventRegistration = {
+    // Ensure we have a valid user ID - use same logic as paid events
+    if (!user.id) {
+      throw new Error('User ID is required for registration');
+    }
+    
+    // For guest users, use their ID directly; for authenticated users, use auth.currentUser.uid
+    const userId = user.isGuest ? user.id : (auth.currentUser?.uid || user.id);
+    
+    const registrationData: any = {
       eventId,
       clubId,
-      userId: user.id ?? '',
+      userId: userId, // Use the appropriate user ID
       userName: user.name,
       userEmail: user.email ?? '',
       userPhone: user.mobile,
@@ -107,11 +125,33 @@ export const eventRegistrationService = {
       eventDate: eventInfo.date,
       eventLocation: eventInfo.location,
       registrationFee: eventInfo.registrationFee || 0,
-      checkInStatus: 'not_checked_in'
+      checkInStatus: 'not_checked_in',
+      isGuest: user.isGuest || false, // Add isGuest field for consistency
     };
 
-    const registrationsRef = collection(db, 'events', clubId, 'clubEvents', eventId, 'registrations');
+    // Only add guestCollege if user is a guest and has college name
+    if (user.isGuest && user.collegeName) {
+      registrationData.guestCollege = user.collegeName;
+    }
+
+    console.log('Creating registration with data:', registrationData);
+    console.log('User ID:', registrationData.userId);
+    console.log('Auth UID:', auth.currentUser?.uid);
+    console.log('User object:', user);
+    console.log('Is guest user?', user.isGuest);
+    
+    // For guest users, use guestRegistrations collection; for regular users, use registrations collection
+    let registrationsRef;
+    if (user.isGuest) {
+      registrationsRef = collection(db, 'events', clubId, 'clubEvents', eventId, 'guestRegistrations');
+    } else {
+      registrationsRef = collection(db, 'events', clubId, 'clubEvents', eventId, 'registrations');
+    }
+    
+    console.log('Creating registration in collection:', registrationsRef.path);
+    console.log('Registration data being stored:', registrationData);
     const docRef = await addDoc(registrationsRef, registrationData);
+    console.log('Registration created successfully with ID:', docRef.id);
     return docRef.id;
   },
 
@@ -125,19 +165,18 @@ export const eventRegistrationService = {
   ): Promise<string> => {
     const clubId = eventInfo.organizerClubId;
     
-    // Ensure we have a valid user ID and user is authenticated
+    // Ensure we have a valid user ID
     if (!user.id) {
       throw new Error('User ID is required for registration');
     }
     
-    if (!auth.currentUser) {
-      throw new Error('User must be authenticated to register for events');
-    }
+    // For consistency, always use user.id (which should be the same as auth.currentUser.uid for regular users)
+    const userId = user.id;
     
-    const registrationData: EventRegistration = {
+    const registrationData: any = {
       eventId,
       clubId,
-      userId: auth.currentUser.uid, // Use the authenticated user's UID
+      userId: userId, // Use the appropriate user ID
       userName: user.name,
       userEmail: user.email ?? '',
       userPhone: user.mobile,
@@ -150,17 +189,33 @@ export const eventRegistrationService = {
       registrationFee: eventInfo.registrationFee || 0,
       paymentStatus: 'paid',
       paymentId,
-      checkInStatus: 'not_checked_in'
+      checkInStatus: 'not_checked_in',
+      isGuest: user.isGuest || false, // Add isGuest field for Firestore rules
     };
 
+    // Only add guestCollege if user is a guest and has college name
+    if (user.isGuest && user.collegeName) {
+      registrationData.guestCollege = user.collegeName;
+    }
+
     console.log('Creating registration with data:', registrationData);
-    console.log('User ID (from auth):', registrationData.userId);
+    console.log('User ID:', registrationData.userId);
     console.log('Auth UID:', auth.currentUser?.uid);
     console.log('User object:', user);
-    console.log('Are UIDs matching?', registrationData.userId === auth.currentUser?.uid);
+    console.log('Is guest user?', user.isGuest);
     
-    const registrationsRef = collection(db, 'events', clubId, 'clubEvents', eventId, 'registrations');
+    // For guest users, use guestRegistrations collection; for regular users, use registrations collection
+    let registrationsRef;
+    if (user.isGuest) {
+      registrationsRef = collection(db, 'events', clubId, 'clubEvents', eventId, 'guestRegistrations');
+    } else {
+      registrationsRef = collection(db, 'events', clubId, 'clubEvents', eventId, 'registrations');
+    }
+    
+    console.log('Creating registration in collection:', registrationsRef.path);
+    console.log('Registration data being stored:', registrationData);
     const docRef = await addDoc(registrationsRef, registrationData);
+    console.log('Registration created successfully with ID:', docRef.id);
     return docRef.id;
   },
 
@@ -169,6 +224,7 @@ export const eventRegistrationService = {
     if (!clubId || !eventId || !userId) return false;
     try {
       const isGuest = userId.startsWith('guest_');
+      console.log('isUserRegistered:', { eventId, userId, clubId, isGuest });
       let activeRegistrations: any[] = [];
       
       if (isGuest) {
@@ -177,9 +233,12 @@ export const eventRegistrationService = {
           collection(db, 'events', clubId, 'clubEvents', eventId, 'guestRegistrations'),
           where('userId', '==', userId)
         );
+        console.log('Querying guest registrations for userId:', userId);
         const guestQuerySnapshot = await getDocs(guestRegistrationsRef);
+        console.log('Guest registrations found:', guestQuerySnapshot.docs.length);
         activeRegistrations = guestQuerySnapshot.docs.filter(doc => {
           const data = doc.data();
+          console.log('Guest registration data:', { id: doc.id, userId: data.userId, status: data.status });
           return data.status !== 'cancelled';
         });
       } else {
@@ -188,18 +247,30 @@ export const eventRegistrationService = {
           collection(db, 'events', clubId, 'clubEvents', eventId, 'registrations'),
           where('userId', '==', userId)
         );
+        console.log('Querying regular registrations for userId:', userId);
         const querySnapshot = await getDocs(registrationsRef);
+        console.log('Regular registrations found:', querySnapshot.docs.length);
         activeRegistrations = querySnapshot.docs.filter(doc => {
           const data = doc.data();
+          console.log('Regular registration data:', { id: doc.id, userId: data.userId, status: data.status });
           return data.status !== 'cancelled';
         });
       }
-      
+      console.log('Active registrations:', activeRegistrations.length);
       return activeRegistrations.length > 0;
     } catch (error) {
       console.error('Error checking user registration:', error, { eventId, userId, clubId });
       return false;
     }
+  },
+
+  // Check if user is already registered for an event (with User object)
+  isUserRegisteredWithUser: async (eventId: string, user: User, clubId?: string): Promise<boolean> => {
+    const correctUserId = getCorrectUserId(user);
+    console.log('isUserRegisteredWithUser:', { eventId, user: user, correctUserId, clubId, isGuest: user.isGuest });
+    const result = await eventRegistrationService.isUserRegistered(eventId, correctUserId, clubId);
+    console.log('Registration check result:', result);
+    return result;
   },
 
   /**
@@ -224,15 +295,19 @@ export const eventRegistrationService = {
       const isGuest = userId.startsWith('guest_');
       
       if (isGuest) {
+        console.log(userId);
         // For guest users, check guestRegistrations collection
+        console.log('Querying guest registrations for:', { userId, clubId, eventId });
         const guestRegsSnap = await getDocs(
           query(
             collection(db, 'events', clubId, 'clubEvents', eventId, 'guestRegistrations'),
             where('userId', '==', userId)
           )
         );
+        console.log('Guest registrations query result:', guestRegsSnap.docs.length, 'documents found');
         for (const regDoc of guestRegsSnap.docs) {
           const regData = regDoc.data() as EventRegistration;
+          console.log('Found guest registration:', { id: regDoc.id, userId: regData.userId, eventId: regData.eventId });
           registrations.push({ id: regDoc.id, ...regData });
         }
       } else {
@@ -302,9 +377,18 @@ export const eventRegistrationService = {
 
     return stats;
   },
-  
-  getEventRegistrationCount: (eventId: string, clubId: string): Promise<number> => {
-    return eventRegistrationService.getEventRegistrations(eventId, clubId).then(registrations => registrations.length);
+
+  // Get only registration count for event cards (lightweight, no guest registrations)
+  getEventRegistrationCount: async (eventId: string, clubId: string): Promise<number> => {
+    try {
+      // Only get regular registrations count (no guest registrations for homepage)
+      const registrationsRef = collection(db, 'events', clubId, 'clubEvents', eventId, 'registrations');
+      const snapshot = await getCountFromServer(registrationsRef);
+      return snapshot.data().count;
+    } catch (error) {
+      console.error('Error getting registration count:', error);
+      return 0;
+    }
   },
 
   // Update registration status
@@ -395,23 +479,45 @@ export const eventRegistrationService = {
       transactionId?: string;
     }
   ): Promise<void> => {
-    if (!payment.eventId || !payment.clubId || !payment.registrationId) return;
-    const paymentRecord: EventPaymentRecord = {
-      ...payment,
-      paymentStatus: 'paid',
-      timestamp: serverTimestamp(),
-    };
-    const paymentRef = doc(
-      db,
-      'events',
-      payment.clubId,
-      'clubEvents',
-      payment.eventId,
-      'payments',
-      payment.paymentId
-    );
-    console.log(paymentRef);
-    await setDoc(paymentRef, paymentRecord);
+    if (!payment.eventId || !payment.clubId || !payment.registrationId) {
+      console.warn('storeEventPayment: Missing required fields', payment);
+      return;
+    }
+    
+    try {
+      const paymentRecord: EventPaymentRecord = {
+        ...payment,
+        paymentStatus: 'paid',
+        timestamp: serverTimestamp(),
+      };
+      
+      // For guest users, store in guest_payments collection; for regular users, store in payments collection
+      const isGuest = payment.userId.startsWith('guest_');
+      const collectionName = isGuest ? 'guest_payments' : 'payments';
+      
+      const paymentRef = doc(
+        db,
+        'events',
+        payment.clubId,
+        'clubEvents',
+        payment.eventId,
+        collectionName,
+        payment.paymentId
+      );
+      
+      console.log('Storing payment record:', paymentRecord);
+      console.log('Payment ref:', paymentRef.path);
+      console.log('Is guest user?', isGuest);
+      console.log('Using collection:', collectionName);
+      
+      await setDoc(paymentRef, paymentRecord);
+      console.log('Payment record stored successfully in', collectionName);
+    } catch (error) {
+      console.error('Error storing payment record:', error);
+      console.error('Payment data:', payment);
+      // Don't throw the error - payment record storage failure shouldn't break the registration flow
+      console.warn('Continuing with registration despite payment record storage failure');
+    }
   },
 
   // Create a new team for a team event
@@ -513,13 +619,22 @@ export const eventRegistrationService = {
     eventInfo: { name: string; date: string; location: string; registrationFee?: number },
     additionalInfo?: string
   ): Promise<string> => {
+    // Create a consistent guest ID based on email to prevent duplicates
+    const guestId = `guest_${guestData.email.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    
+    // First check if this guest is already registered for this event
+    const isAlreadyRegistered = await eventRegistrationService.isUserRegistered(eventId, guestId, clubId);
+    if (isAlreadyRegistered) {
+      throw new Error('You are already registered for this event!');
+    }
+    
     const now = new Date();
     const expirationDate = new Date(now.getTime() + (3 * 30 * 24 * 60 * 60 * 1000)); // 3 months from now
     
     const registrationData = {
       eventId,
       clubId,
-      userId: `guest_${Date.now()}`,
+      userId: guestId, // Use consistent guest ID based on email
       userName: guestData.name,
       userEmail: guestData.email,
       userPhone: guestData.phone,
@@ -541,8 +656,67 @@ export const eventRegistrationService = {
     };
 
     const guestRegistrationsRef = collection(db, 'events', clubId, 'clubEvents', eventId, 'guestRegistrations');
+    console.log('Creating guest registration in collection:', guestRegistrationsRef.path);
+    console.log('Registration data being stored:', registrationData);
     const docRef = await addDoc(guestRegistrationsRef, registrationData);
+    console.log('Guest registration created successfully with ID:', docRef.id);
     return docRef.id;
+  },
+
+  // Batch check user registrations for multiple events (optimized for ProfilePage)
+  batchCheckUserRegistrations: async (
+    userId: string,
+    events: { id: string; organizerClubId: string }[]
+  ): Promise<string[]> => {
+    if (!userId || events.length === 0) return [];
+    
+    try {
+      const isGuest = userId.startsWith('guest_');
+      const registeredEventIds: string[] = [];
+      
+      // Process events in batches to avoid overwhelming Firestore
+      const batchSize = 10;
+      for (let i = 0; i < events.length; i += batchSize) {
+        const batch = events.slice(i, i + batchSize);
+        
+        const batchPromises = batch.map(async (event) => {
+          try {
+            const isRegistered = await eventRegistrationService.isUserRegistered(
+              event.id, 
+              userId, 
+              event.organizerClubId
+            );
+            return isRegistered ? event.id : null;
+          } catch (error) {
+            console.error(`Error checking registration for event ${event.id}:`, error);
+            return null;
+          }
+        });
+        
+        const batchResults = await Promise.all(batchPromises);
+        registeredEventIds.push(...batchResults.filter(id => id !== null));
+      }
+      
+      return registeredEventIds;
+    } catch (error) {
+      console.error('Error in batch check user registrations:', error);
+      return [];
+    }
+  },
+
+  // Get user's registered events with event details (optimized for ProfilePage)
+  getUserRegisteredEvents: async (
+    userId: string,
+    events: { id: string; organizerClubId: string }[]
+  ): Promise<{ upcoming: string[]; past: string[] }> => {
+    const registeredEventIds = await eventRegistrationService.batchCheckUserRegistrations(userId, events);
+    
+    // This would need to be called from ProfilePage with the actual event objects
+    // to determine upcoming vs past events
+    return {
+      upcoming: registeredEventIds, // This will be filtered in the component
+      past: []
+    };
   },
 };
 

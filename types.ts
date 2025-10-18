@@ -39,6 +39,7 @@ export interface Event {
   specialGuests?: string[];
   customSections?: { title: string; content: string }[];
   parentAnnualEventId?: string; // Links sub-events to a main annual event
+  registeredUsers?: string[]; // Array of user IDs who registered for this event
 }
 
 export interface ClubTeamMember {
@@ -89,6 +90,10 @@ export interface User {
   // Guest-specific
   collegeName?: string; 
   isGuest?: boolean;
+  expiresAt?: Date; // For guest user cleanup
+  
+  // Registration tracking
+  registeredEvents?: string[]; // Array of event IDs the user has registered for
 }
 
 
@@ -242,8 +247,8 @@ export interface EventRegistrationStats {
 
 export type View =
   | { type: 'home' }
-  | { type: 'all-events' }
-  | { type: 'all-clubs' }
+  | { type: 'events' }
+  | { type: 'clubs' }
   | { type: 'external-events' }
   | { type: 'news' }
   | { type: 'profile' }

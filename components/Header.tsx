@@ -207,7 +207,7 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout, applications, notificat
             <MobileNavLink to="/" onClick={closeAllMenus}>Home</MobileNavLink>
             <MobileNavLink to="/events" onClick={closeAllMenus}>All Events</MobileNavLink>
             <MobileNavLink to="/annual-events" onClick={closeAllMenus}>Annual Events</MobileNavLink>
-            {!user?.isGuest && <MobileNavLink to="/clubs" onClick={closeAllMenus}>Clubs</MobileNavLink>}
+            <MobileNavLink to="/clubs" onClick={closeAllMenus}>Clubs</MobileNavLink>
             <MobileNavLink to="/news" onClick={closeAllMenus}>News</MobileNavLink>
             <MobileNavLink to="/opportunities" onClick={closeAllMenus}>Opportunities</MobileNavLink>
             {user && (

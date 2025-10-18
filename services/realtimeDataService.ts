@@ -1,5 +1,6 @@
 import { 
   collection, 
+  collectionGroup,
   onSnapshot, 
   query, 
   where, 
@@ -21,14 +22,18 @@ export class RealtimeDataService {
 
   // Listen to events with real-time updates
   listenToEvents(callback: (events: Event[]) => void): Unsubscribe {
-    const eventsRef = collection(db, 'events');
+    const eventsRef = collectionGroup(db, "clubEvents");
     const q = query(eventsRef, orderBy('date', 'asc'));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const events = snapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        ...(doc.data() as Event) 
-      } as Event));
+      const events = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          organizerClubId: data.organizerClubId || doc.ref.parent.parent?.id, // ✅ ensure clubId is always present
+        } as Event;
+      });
       callback(events);
     }, (error) => {
       console.error('Error listening to events:', error);

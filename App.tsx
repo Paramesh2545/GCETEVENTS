@@ -2,11 +2,10 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { Routes, Route, useNavigate, useParams, Navigate, useLocation } from 'react-router-dom';
 import { User, Application, Event as EventType, Club, ClubTeamMember, AnnualEvent, Notification, LeadershipMember, NewsArticle, ExternalEvent } from './types';
 import * as service from './services/mockService';
-import { firebaseAuthService, getUserWithProfile, userProfileService } from './services/firebaseAuthService';
+import { firebaseAuthService, getUserWithProfile, userProfileService, createGuestUserProfile } from './services/firebaseAuthService';
 import { auth } from './firebaseConfig';
 import { firestoreDataService, clubApplicationsService } from './services/firestoreDataService';
-import { setupRealtimeListeners } from './services/realtimeDataService';
-import { eventRegistrationService } from './services/eventRegistrationService';
+import { useDataFetching } from './hooks/useDataFetching';
 import { assignContributorRole, revokeContributorFromClub, revokeAllContributorAccess, addClubMember, removeClubMember, updateClubMember, createClub } from './utils/adminUtils';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -44,26 +43,28 @@ const LoadingSpinner: React.FC = () => (
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Data states
-  const [events, setEvents] = useState<EventType[]>([]);
-  const [clubs, setClubs] = useState<Club[]>([]);
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [annualEvents, setAnnualEvents] = useState<AnnualEvent[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [leadership, setLeadership] = useState<LeadershipMember[]>([]);
-  const [news, setNews] = useState<NewsArticle[]>([]);
-  const [externalEvents, setExternalEvents] = useState<ExternalEvent[]>([]);
-
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Local state for registered events, etc.
-  const [registeredEventIds, setRegisteredEventIds] = useState<string[]>([]);
+  // Use optimized data fetching hook
+  const {
+    events,
+    clubs,
+    applications,
+    users,
+    annualEvents,
+    notifications,
+    leadership,
+    news,
+    externalEvents,
+    isLoading,
+    updateEvents,
+    updateClubs,
+    updateApplications,
+  } = useDataFetching({ user, enableRealtime: false });
 
-  // Auth state listener
+
+  // Auth state listener - only runs once
   useEffect(() => {
     const unsubscribe = firebaseAuthService.onAuthStateChanged(async (firebaseUser) => {
       if (firebaseUser) {
@@ -81,122 +82,8 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Initial data fetching effect
-  useEffect(() => {
-    const fetchInitialData = async () => {
-      setIsLoading(true);
-      try {
-        // Use Firestore data service for initial load
-        const [
-          eventsData, clubsData, leadershipData, annualEventsData, 
-          usersData, newsData, externalEventsData, notificationsData, applicationsData
-        ] = await Promise.all([
-          firestoreDataService.getEvents(), 
-          firestoreDataService.getClubs(), 
-          firestoreDataService.getLeadership(), 
-          firestoreDataService.getAnnualEvents(),
-          firestoreDataService.getUsers(), 
-          firestoreDataService.getNews(), 
-          firestoreDataService.getExternalEvents(), 
-          firestoreDataService.getNotifications(), 
-          firestoreDataService.getApplications()
-        ]);
-        setEvents(eventsData);
-        // console.log('Events after Firestore fetch:', eventsData);
-        setClubs(clubsData);
-        setLeadership(leadershipData);
-        setAnnualEvents(annualEventsData);
-        setUsers(usersData);
-        setNews(newsData);
-        setExternalEvents(externalEventsData);
-        setNotifications(notificationsData);
-        setApplications(applicationsData);
-      } catch (error) {
-        console.error("Failed to fetch initial data:", error);
-        // Fallback to mock data if Firestore fails
-        try {
-          const [
-            eventsData, clubsData, leadershipData, annualEventsData, 
-            usersData, newsData, externalEventsData, notificationsData, applicationsData
-          ] = await Promise.all([
-            service.getEvents(), service.getClubs(), service.getLeadership(), service.getAnnualEvents(),
-            service.getUsers(), service.getNews(), service.getExternalEvents(), service.getNotifications(), service.getApplications()
-          ]);
-          setEvents(eventsData);
-          console.log('Events after mock fetch:', eventsData);
-          setClubs(clubsData);
-          setLeadership(leadershipData);
-          setAnnualEvents(annualEventsData);
-          setUsers(usersData);
-          setNews(newsData);
-          setExternalEvents(externalEventsData);
-          setNotifications(notificationsData);
-          setApplications(applicationsData);
-        } catch (fallbackError) {
-          console.error("Failed to fetch fallback data:", fallbackError);
-        }
-      } finally {
-        setIsLoading(false);
-        // console.log('isLoading set to false');
-      }
-    };
-    fetchInitialData();
-  }, []);
-  // Real-time data listeners
-  useEffect(() => {
-    if (!user) {
-      // console.log('No user, skipping real-time listeners');
-      return;
-    }
-    // console.log('Setting up real-time listeners for user:', user.id);
-    const cleanup = setupRealtimeListeners({
-      onEventsUpdate: (evts) => {
-        // console.log('Realtime events update:', evts);
-        if (evts && evts.length > 0) {
-          setEvents(evts);
-        } else if (evts.length === 0 && events.length > 0) {
-          // Do not overwrite with empty if we already have events
-          console.warn('Prevented overwriting events with empty array');
-        } else {
-          setEvents(evts);
-        }
-      },
-      onClubsUpdate: setClubs,
-      onLeadershipUpdate: setLeadership,
-      onAnnualEventsUpdate: setAnnualEvents,
-      onNewsUpdate: setNews,
-      onExternalEventsUpdate: setExternalEvents,
-      onNotificationsUpdate: setNotifications,
-      onApplicationsUpdate: setApplications,
-      onUsersUpdate: setUsers
-    }, user.id, user.role === 'admin');
-
-    return cleanup;
-  }, [user]);
-
-  // Load user registrations on login
-  useEffect(() => {
-    if (user) {
-      // For each club and event, fetch user registrations
-      const fetchUserRegistrations = async () => {
-        const userRegs: string[] = [];
-        for (const club of clubs) {
-          for (const event of events.filter(e => e.organizerClubId === club.id)) {
-            // FIX: Always pass clubId to isUserRegistered and getUserRegistrations
-            const regs = await eventRegistrationService.getUserRegistrations(user.id, club.id, event.id);
-            regs.filter(r => r.status !== 'cancelled').forEach(r => userRegs.push(r.eventId));
-          }
-        }
-        setRegisteredEventIds(userRegs);
-        // console.log('User registrations loaded:', userRegs);
-      };
-      fetchUserRegistrations().catch(error => {
-        console.error('Error loading user registrations:', error);
-      });
-    } else {
-      setRegisteredEventIds([]);
-    }
-  }, [user, clubs, events]);
+  // Registration status is now checked per-event when needed (e.g., when opening EventDetail or EventRegistrationModal)
+  // This eliminates the inefficient global registration checking that was querying every event
 
   // --- MOCK REGISTRATIONS ---
   const [registrations, setRegistrations] = useState<{[key: string]: number}>({
@@ -271,20 +158,29 @@ const App: React.FC = () => {
     }
   };
 
-  const handleGuestLogin = (guestData: { name: string; email: string; phone: string; college: string; year: string; department: string }) => {
-    const guestUser: User = { 
-      id: `guest_${Date.now()}`, 
-      name: guestData.name,
-      email: guestData.email,
-      mobile: guestData.phone,
-      year: guestData.year,
-      branch: guestData.department,
-      collegeName: guestData.college,
-      role: 'guest', 
-      isGuest: true 
-    };
-    setUser(guestUser);
-    navigate('/');
+  const handleGuestLogin = async (guestData: { name: string; email: string; phone: string; college: string; year: string; department: string }) => {
+    try {
+      // Create guest user profile in Firestore
+      const guestUser = await createGuestUserProfile(guestData);
+      setUser(guestUser);
+      navigate('/');
+    } catch (error) {
+      console.error('Error creating guest user profile:', error);
+      // Fallback: create guest user without storing in database
+      const guestUser: User = { 
+        id: `guest_${Date.now()}`, 
+        name: guestData.name,
+        email: guestData.email,
+        mobile: guestData.phone,
+        year: guestData.year,
+        branch: guestData.department,
+        collegeName: guestData.college,
+        role: 'guest', 
+        isGuest: true 
+      };
+      setUser(guestUser);
+      navigate('/');
+    }
   };
 
   const handleLogout = async () => {
@@ -302,39 +198,24 @@ const App: React.FC = () => {
 
   // --- DATA MUTATION HANDLERS (Dummy implementations) ---
   const handleRegisterEvent = (eventId: string) => {
-    setRegisteredEventIds(prev => [...prev, eventId]);
     setRegistrations(prev => ({...prev, [eventId]: (prev[eventId] || 0) + 1}));
-    alert('Registration successful!');
+    // Don't show alert here - let the EventRegistrationModal handle success display
+    // The modal will show the success state and close itself
   };
 
   const handleRegistrationUpdate = useCallback(() => {
-    // Refresh registered events when registration status changes
-    if (user) {
-      const fetchUserRegistrations = async () => {
-        const userRegs: string[] = [];
-        for (const club of clubs) {
-          for (const event of events.filter(e => e.organizerClubId === club.id)) {
-            // FIX: Always pass clubId to getUserRegistrations
-            const regs = await eventRegistrationService.getUserRegistrations(user.id, club.id, event.id);
-            regs.filter(r => r.status !== 'cancelled').forEach(r => userRegs.push(r.eventId));
-          }
-        }
-        setRegisteredEventIds(userRegs);
-      };
-      fetchUserRegistrations().catch(error => {
-        console.error('Error refreshing registrations:', error);
-      });
-    }
-  }, [user, clubs, events]);
+    // Registration status is now checked per-component when needed
+    // No global refresh needed since each component handles its own registration state
+  }, []);
 
   const handleCreateEvent = (newEvent: EventType) => { alert('Creating event'); };
   const handleUpdateEvent = (updatedEvent: EventType) => { alert('Updated event successfully'); };
   const handleUpdateClub = async (updatedClub: Club) => {
     try {
       await firestoreDataService.updateClub(updatedClub.id, updatedClub);
-      // Refresh clubs after update
+      // Update clubs using optimized function
       const refreshedClubs = await firestoreDataService.getClubs();
-      setClubs(refreshedClubs);
+      updateClubs(refreshedClubs);
       alert('Club details updated successfully!');
     } catch (error: any) {
       console.error('Error updating club:', error);
@@ -358,7 +239,7 @@ const App: React.FC = () => {
     // Best-effort refresh (do not alert on failure if update already succeeded)
     try {
       const refreshed = await firestoreDataService.getClubApplications(clubId);
-      setApplications(prev => {
+      updateApplications(prev => {
         const others = prev.filter(a => a.clubId !== clubId);
         return [...others, ...refreshed];
       });
@@ -381,7 +262,7 @@ const App: React.FC = () => {
         answers: application.answers
       });
       // Also update in-memory club-specific applications list immediately
-      setApplications(prev => [created, ...prev]);
+      updateApplications(prev => [created, ...prev]);
     } catch (error: any) {
       console.error('Error creating application:', error);
       alert(error.message || 'Failed to submit application');
@@ -399,7 +280,7 @@ const App: React.FC = () => {
       if (success) {
         // Refresh the users data to reflect the changes
         const updatedUsers = await firestoreDataService.getUsers();
-        setUsers(updatedUsers);
+        // Note: users are updated via real-time listeners, no need to manually update
         alert('Contributor role assigned successfully!');
       } else {
         alert('Failed to assign contributor role. Please try again.');
@@ -417,13 +298,9 @@ const App: React.FC = () => {
 
     try {
       const club = await createClub(newClubData, assignedAdminId, user.id);
-      // refresh clubs and users (assigned contributor updated)
-      const [updatedClubs, updatedUsers] = await Promise.all([
-        firestoreDataService.getClubs(),
-        firestoreDataService.getUsers()
-      ]);
-      setClubs(updatedClubs);
-      setUsers(updatedUsers);
+      // refresh clubs (users updated via real-time listeners)
+      const updatedClubs = await firestoreDataService.getClubs();
+      updateClubs(updatedClubs);
       alert(`Club "${club.name}" created successfully!`);
       // navigate to new club detail
       navigate(`/clubs/${club.id}`);
@@ -450,9 +327,7 @@ const App: React.FC = () => {
       }
       
       if (success) {
-        // Refresh the users data to reflect the changes
-        const updatedUsers = await firestoreDataService.getUsers();
-        setUsers(updatedUsers);
+        // Users updated via real-time listeners
         alert('Contributor access revoked successfully!');
       } else {
         alert('Failed to revoke contributor access. Please try again.');
@@ -479,7 +354,7 @@ const App: React.FC = () => {
       if (success) {
         // Refresh the clubs data to reflect the changes
         const updatedClubs = await firestoreDataService.getClubs();
-        setClubs(updatedClubs);
+        updateClubs(updatedClubs);
         alert('Member added successfully!');
       } else {
         alert('Failed to add member. Please try again.');
@@ -502,7 +377,7 @@ const App: React.FC = () => {
       if (success) {
         // Refresh the clubs data to reflect the changes
         const updatedClubs = await firestoreDataService.getClubs();
-        setClubs(updatedClubs);
+        updateClubs(updatedClubs);
         alert('Member removed successfully!');
       } else {
         alert('Failed to remove member. Please try again.');
@@ -515,7 +390,7 @@ const App: React.FC = () => {
 
   const handleUpdateClubMember = async (clubId: string, memberId: string, memberData: { name?: string; position?: string; imageUrl?: string }) => {
     // Only update local state, do NOT call backend here
-    setClubs(prevClubs =>
+    updateClubs(prevClubs =>
       prevClubs.map(club =>
         club.id === clubId
           ? {
@@ -567,7 +442,7 @@ const App: React.FC = () => {
     return <ClubDetail 
       club={club} 
       clubEvents={clubEvents}
-      setEvents={setEvents}
+      setEvents={updateEvents}
       user={user} 
       applications={clubApplications}
       allUsers={users} 
@@ -588,7 +463,7 @@ const App: React.FC = () => {
     if (!eventId) return <Navigate to="/events" replace />;
     const event = events.find(e => e.id === eventId);
     if (!event) return <Navigate to="/events" replace />;
-    return <EventDetail event={event} clubs={clubs} user={user} registeredEventIds={registeredEventIds} onRegister={handleRegisterEvent} onUpdateEventHighlights={handleUpdateEventHighlights} onUpdateEvent={handleUpdateEvent} onRegistrationUpdate={handleRegistrationUpdate} />;
+    return <EventDetail event={event} clubs={clubs} user={user} onRegister={handleRegisterEvent} onUpdateEventHighlights={handleUpdateEventHighlights} onUpdateEvent={handleUpdateEvent} onRegistrationUpdate={handleRegistrationUpdate} />;
   };
 
   const AnnualEventDetailWrapper = () => {
@@ -603,7 +478,7 @@ const App: React.FC = () => {
       if(user.role === 'admin') {
           return <DevAdminProfile user={user} clubs={clubs} events={events} allUsers={users} onAssignRole={handleAssignContributor} onRevokeRole={handleRevokeContributor} />
       }
-      return <ProfilePage user={user} onLogout={handleLogout} events={events} clubs={clubs} applications={applications} registeredEventIds={registeredEventIds} />
+      return <ProfilePage user={user} onLogout={handleLogout} events={events} clubs={clubs} applications={applications} />
   }
   // console.log(events)
 

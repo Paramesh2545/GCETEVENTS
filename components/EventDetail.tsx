@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Event, EventStatus, User, Club } from '../types';
 import { eventRegistrationService } from '../services/eventRegistrationService';
@@ -14,7 +14,6 @@ interface EventDetailProps {
   event: Event;
   clubs: Club[];
   user: User | null;
-  registeredEventIds: string[];
   onRegister: (eventId: string) => void;
   onUpdateEventHighlights: (eventId: string, highlights: Event['highlights']) => void;
   onUpdateEvent: (event: Event) => void;
@@ -27,9 +26,10 @@ const statusStyles: { [key in EventStatus]: string } = {
   [EventStatus.Past]: 'bg-gray-500/10 text-gray-400',
 };
 
-const EventDetail: React.FC<EventDetailProps> = ({ event, clubs, user, registeredEventIds, onRegister, onUpdateEventHighlights, onUpdateEvent, onRegistrationUpdate }) => {
+const EventDetail: React.FC<EventDetailProps> = ({ event, clubs, user, onRegister, onUpdateEventHighlights, onUpdateEvent, onRegistrationUpdate }) => {
     const organizerClub = clubs.find(c => c.id === event.organizerClubId);
-    const isRegistered = registeredEventIds.includes(event.id);
+    const [isRegistered, setIsRegistered] = useState<boolean>(false);
+    const [isCheckingRegistration, setIsCheckingRegistration] = useState<boolean>(false);
     // Find admin in club team
     const clubAdmin = organizerClub?.team?.find(m => m.position?.toLowerCase() === 'admin');
     const isClubAdmin = user && clubAdmin && clubAdmin.id === user.id;
@@ -39,9 +39,32 @@ const EventDetail: React.FC<EventDetailProps> = ({ event, clubs, user, registere
     const [isEditingHighlights, setIsEditingHighlights] = useState(false);
     const [isEditingEvent, setIsEditingEvent] = useState(false);
     const [isRegistrationModalOpen, setIsRegistrationModalOpen] = useState(false);
-    const [isCheckingRegistration, setIsCheckingRegistration] = useState(false);
     const [toastMessage, setToastMessage] = useState<{message: string, type: 'success' | 'error' | 'info' | 'warning'} | null>(null);
     const canEdit = isAdmin && event.status !== EventStatus.Past;
+
+    // Check registration status when component mounts or when user/event changes
+    useEffect(() => {
+        if (user && event) {
+            checkRegistrationStatus();
+        } else {
+            setIsRegistered(false);
+        }
+    }, [user, event.id]);
+
+    const checkRegistrationStatus = async () => {
+        if (!user || !event) return;
+        
+        try {
+            setIsCheckingRegistration(true);
+            const registered = await eventRegistrationService.isUserRegisteredWithUser(event.id, user, event.organizerClubId);
+            setIsRegistered(registered);
+        } catch (error) {
+            console.error('Error checking registration status:', error);
+            setIsRegistered(false);
+        } finally {
+            setIsCheckingRegistration(false);
+        }
+    };
 
     const handleRegistration = async (e: React.FormEvent) => {
         console.log("yeaa")
@@ -51,7 +74,7 @@ const EventDetail: React.FC<EventDetailProps> = ({ event, clubs, user, registere
         setIsCheckingRegistration(true);
         try {
             // Check if user is already registered
-            const isAlreadyRegistered = await eventRegistrationService.isUserRegistered(event.id, user.id);
+            const isAlreadyRegistered = await eventRegistrationService.isUserRegisteredWithUser(event.id, user, event.organizerClubId);
             
             if (isAlreadyRegistered) {
                 // Show already registered message
@@ -77,6 +100,8 @@ const EventDetail: React.FC<EventDetailProps> = ({ event, clubs, user, registere
     }
 
     const handleRegistrationSuccess = (registrationId: string) => {
+        // Update local registration status immediately
+        setIsRegistered(true);
         onRegister(event.id);
         onRegistrationUpdate?.();
         setIsRegistrationModalOpen(false);

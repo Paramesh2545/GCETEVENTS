@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Event, User } from '../types';
 import { eventRegistrationService, EventRegistration } from '../services/eventRegistrationService';
+import { optimizedRegistrationService } from '../services/optimizedRegistrationService';
 import PaymentModal from './PaymentModal';
 
 interface EventRegistrationModalProps {
@@ -31,27 +32,36 @@ const EventRegistrationModal: React.FC<EventRegistrationModalProps> = ({
   const [foundTeams, setFoundTeams] = useState<{ id: string; name: string }[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
 
-  // Check if user is already registered
+  // Check if user is already registered only when modal opens for a specific event
   useEffect(() => {
-    if (isOpen && user) {
+    if (isOpen && user && event.id) {
+      console.log('Modal opened for event:', event.id, 'checking registration status...');
       checkRegistrationStatus();
     }
-  }, [isOpen, user, event.id]);
+  }, [isOpen, user, event.id]); // Only re-run when these specific values change
 
   const checkRegistrationStatus = async () => {
     try {
-      // FIX: Always pass clubId to isUserRegistered
-      const registered = await eventRegistrationService.isUserRegistered(event.id, user.id, event.organizerClubId);
+      console.log('Checking registration status for:', { eventId: event.id, userId: user.id, clubId: event.organizerClubId, isGuest: user.isGuest });
+      
+      // Use the optimized service - single read check
+      const userId = user.isGuest ? user.id : (user.id || '');
+      const registered = await optimizedRegistrationService.isUserRegistered(userId, event.id);
+      console.log('Registration status result:', registered);
+      
+      // Don't fetch full registration details - just set the status
+      // This eliminates unnecessary guest registration queries
       setIsRegistered(registered);
+      setRegistration(null); // We don't need the full registration object for the modal
       
       if (registered) {
-        // FIX: Always pass clubId to getUserRegistrations
-        const registrations = await eventRegistrationService.getUserRegistrations(user.id, event.organizerClubId, event.id);
-        const eventRegistration = registrations.find(r => r.eventId === event.id);
-        setRegistration(eventRegistration || null);
+        console.log('User is registered for this event');
+      } else {
+        console.log('User is not registered for this event');
       }
     } catch (error) {
       console.error('Error checking registration status:', error);
+      // Don't set isRegistered to false on error - let the user try to register
     }
   };
 
@@ -108,9 +118,19 @@ const EventRegistrationModal: React.FC<EventRegistrationModalProps> = ({
         );
       }
       
+      // Update both user and event documents with atomic updates
+      const userId = user.isGuest ? user.id : (user.id || '');
+      await optimizedRegistrationService.registerUserForEvent(userId, event.id, event.organizerClubId);
+      
       setIsRegistered(true);
-      onRegistrationSuccess(registrationId);
-      await checkRegistrationStatus();
+      
+      // Add a small delay to show success message before closing modal
+      setTimeout(() => {
+        onRegistrationSuccess(registrationId);
+      }, 2000); // 2 second delay to show success message
+      
+      // Don't re-check registration status since we just created it successfully
+      // This avoids unnecessary database queries and permission issues
     } catch (error: any) {
       // Show a more helpful error if user tries to register for paid event (and backend throws)
       if (
@@ -123,6 +143,10 @@ const EventRegistrationModal: React.FC<EventRegistrationModalProps> = ({
         setError(null);
         setIsLoading(false);
         return;
+      } else if (error?.message?.includes('already registered')) {
+        // Handle duplicate registration error
+        setError('You are already registered for this event!');
+        setIsRegistered(true); // Show as registered
       } else {
         setError('Registration failed. Please try again.');
       }
@@ -232,10 +256,22 @@ const EventRegistrationModal: React.FC<EventRegistrationModalProps> = ({
       );
 
       setIsRegistered(true);
-      onRegistrationSuccess(registrationId);
-      await checkRegistrationStatus();
-    } catch (error) {
-      setError('Team registration failed. Please try again.');
+      
+      // Add a small delay to show success message before closing modal
+      setTimeout(() => {
+        onRegistrationSuccess(registrationId);
+      }, 2000); // 2 second delay to show success message
+      
+      // Don't re-check registration status since we just created it successfully
+      // This avoids unnecessary database queries and permission issues
+    } catch (error: any) {
+      if (error?.message?.includes('already registered')) {
+        // Handle duplicate registration error
+        setError('You are already registered for this event!');
+        setIsRegistered(true); // Show as registered
+      } else {
+        setError('Team registration failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -243,6 +279,8 @@ const EventRegistrationModal: React.FC<EventRegistrationModalProps> = ({
 
   const handlePaymentSuccess = async (paymentId: string) => {
     try {
+      console.log('Payment successful, creating registration...', { paymentId, userId: user.id, isGuest: user.isGuest });
+      
       // For paid events, create registration only after payment is successful
       const registrationId = await eventRegistrationService.registerForPaidEvent(
         event.id,
@@ -257,28 +295,40 @@ const EventRegistrationModal: React.FC<EventRegistrationModalProps> = ({
         paymentId,
         additionalInfo.trim() || undefined
       );
+      
+      console.log('Registration created successfully:', registrationId);
+      
       // Store payment record in event's payments subcollection
-      await eventRegistrationService.storeEventPayment({
-        registrationId,
-        eventId: event.id,
-        clubId: event.organizerClubId,
-        userId: user.id,
-        userName: user.name,
-        userEmail: user.email || '',
-        amount: event.registrationFee || 0,
-        paymentId,
-        // Optionally, you can pass paymentMethod/transactionId if available
-      });
+      try {
+        await eventRegistrationService.storeEventPayment({
+          registrationId,
+          eventId: event.id,
+          clubId: event.organizerClubId,
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email || '',
+          amount: event.registrationFee || 0,
+          paymentId,
+        });
+        console.log('Payment record stored successfully');
+      } catch (paymentError) {
+        console.warn('Payment record storage failed, but continuing:', paymentError);
+      }
 
+      console.log('Setting registration status to true...');
       setIsRegistered(true);
-      onRegistrationSuccess(registrationId);
-      setShowPaymentModal(false);
-      setPendingRegistrationId(null);
+      
+      // Add a small delay to show success message before closing modal
+      setTimeout(() => {
+        onRegistrationSuccess(registrationId);
+        setShowPaymentModal(false);
+        setPendingRegistrationId(null);
+      }, 2000); // 2 second delay to show success message
 
-      // Refresh registration data
-      await checkRegistrationStatus();
+      // Don't re-check registration status since we just created it successfully
+      // This avoids permission issues with guest users
+      console.log('Registration completed successfully, skipping status check');
     } catch (error) {
-      console.log()
       console.error('Error updating registration after payment:', error);
       setError('Payment successful but registration update failed. Please contact support.');
     }

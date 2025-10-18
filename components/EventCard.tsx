@@ -3,8 +3,8 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Event, EventStatus } from '../types';
 import { getEventName, getEventDescription, getEventDate, getEventTime, getEventLocation } from '../utils/eventUtils';
-import { eventRegistrationService } from '../services/eventRegistrationService';
-import { count } from 'firebase/firestore/lite';
+import { optimizedRegistrationService } from '../services/optimizedRegistrationService';
+import LazyWrapper from './LazyWrapper';
 
 const statusStyles: { [key in EventStatus]: string } = {
   [EventStatus.Upcoming]: 'bg-green-500/10 text-green-400',
@@ -38,37 +38,25 @@ const EventCard: React.FC<EventCardProps> = ({ event, registrations = 0 }) => {
   //have to change it to fetch only count
   // const eventRegistrationCount = eventRegistrationService.getEventRegistrationCount(event.id, event.organizerClubId);
   
-  // State to hold registration stats
-  const [stats, setStats] = React.useState({
-    totalRegistrations: 0,
-    confirmedRegistrations: 0,
-    pendingRegistrations: 0,
-    cancelledRegistrations: 0,
-    checkedInCount: 0
-  });
-  const [isLoading, setIsLoading] = React.useState(false);
-
   // State to hold registration count
-  // const eventRegistrationCount = eventRegistrationService.getRegistrationCount(event.id,);
-  useEffect(() => {
-    fetchData();
-  }, [event.id]);
+  const [registrationCount, setRegistrationCount] = React.useState(0);
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [hasLoaded, setHasLoaded] = React.useState(false);
 
   const fetchData = async () => {
+    if (hasLoaded) return; // Prevent duplicate calls
+    
     try {
-          setIsLoading(true);
-          // Already uses correct params:
-          const [statsData, registrationsData] = await Promise.all([
-            eventRegistrationService.getEventRegistrationStats(event.id, event.organizerClubId),
-            eventRegistrationService.getEventRegistrations(event.id, event.organizerClubId)
-          ]);
-          setStats(statsData);
-          
-        } catch (error) {
-          console.error('Error loading registration data:', error);
-        } finally {
-          setIsLoading(false);
-        }
+      setIsLoading(true);
+      // Use optimized service - single read for registration count
+      const count = await optimizedRegistrationService.getEventRegistrationCount(event.id, event.organizerClubId);
+      setRegistrationCount(count);
+      setHasLoaded(true);
+    } catch (error) {
+      console.error('Error loading registration count:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
 
@@ -121,13 +109,23 @@ const EventCard: React.FC<EventCardProps> = ({ event, registrations = 0 }) => {
               </svg>
             </button>
         </div>
-        {/* Registration statistics section */}
+        {/* Registration statistics section - lazy loaded */}
         <div className="mt-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div className="bg-slate-800 rounded-lg px-4 py-2 text-sm text-indigo-400 font-semibold flex items-center justify-center w-full sm:w-auto">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2h5m6 0v-6a4 4 0 00-4-4V4a4 4 0 018 0v6a4 4 0 00-4 4v6z" /></svg>
-              {stats.totalRegistrations} Registration{stats.totalRegistrations === 1 ? '' : 's'}
-            </div>
+            <LazyWrapper
+              fallback={
+                <div className="bg-slate-800 rounded-lg px-4 py-2 text-sm text-gray-400 font-semibold flex items-center justify-center w-full sm:w-auto animate-pulse">
+                  <div className="h-4 w-4 mr-2 bg-gray-600 rounded"></div>
+                  Loading...
+                </div>
+              }
+              onVisible={fetchData}
+            >
+              <div className="bg-slate-800 rounded-lg px-4 py-2 text-sm text-indigo-400 font-semibold flex items-center justify-center w-full sm:w-auto">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2h5m6 0v-6a4 4 0 00-4-4V4a4 4 0 018 0v6a4 4 0 00-4 4v6z" /></svg>
+                {isLoading ? 'Loading...' : `${registrationCount} Registration${registrationCount === 1 ? '' : 's'}`}
+              </div>
+            </LazyWrapper>
           </div>
         </div>
       </div>
